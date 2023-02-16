@@ -1,0 +1,81 @@
+---
+title: ZooKeeper
+description: Wait-free coordination for Internet-scale systems
+---
+
+### Abstract
+
+- Zookeeper: a service for coordinating processes of distributed applications
+- simple and high performance kernel for building more complex coordination primitives at the client
+- group messaging, shared registers, distributed lock services in a replicated centralized service
+- Properties
+    - Wait-free
+    - FIFO execution of requests and linearizability for all requests that change the Zookeeper state
+- 2:1 to 100:1 read to write ratio, that ZooKeeper can handle tens to hundreds of thousands of transactions per second.
+
+### Introduction
+
+- One approach to coordination is to develop services for different coordination needs
+    - Amazon SQS: queuing
+    - Other services for leader election and configuration
+- Services that implements more powerful primitives and be used to implement less powerful ones
+    - Chubby: locking service with strong sync guarantees
+        - locks can be used to implement leader election, group membership, etc.
+- Expose an API that enables developers to implement their own primitives
+    - Implementation of coordination kernel that enables new primitives without requiring changes to the service core
+- Blocking primitives for a coordination service can cause, among other problems, slow or faulty clients to impact negatively the performance of faster clients
+- Simple pipelined architecture that allows use to have thousands requests outstanding while still achieving low latency
+- Linearizability
+    - Zab: leader-based atomic broadcast protocol
+- Lock mechanism to cache the identifier of the current leader instead of probing ZK every time it needs to know the leader
+- Watch mechanism to enable clients to cache data without managing the client cache
+    - client can watch for update to a given data object, and receive a notification upon an update
+
+### ZooKeeper Overview
+
+- ZNode
+    - Regular
+        - clients manipulate regular znodes by creating and deleting them explicitly
+    - Ephemeral
+        - create such znodes, and they either delete them explicitly, or let the system remove them automatically when the session that creates them terminates
+    - Sequential flag have value of a monotonically increasing counter appended to its name
+    - Znodes map to abstractions of the client application, typically corresponding
+    to meta-data used for coordination purposes
+- Watches
+    - read request w watch flag → operation completes as normal + server promises to notify the client when the info returned has changed
+    - one-time trigger associated with a session
+    - indicate change happened but do not provide the change
+- Sessions
+    - has a timeout
+
+### ZooKeeper Guarantees
+
+- Linearizable writes
+    - all requests that update the state of ZooKeeper are serializable and respect precedence
+- FIFO client order
+    - all requests from a given client are executed in the order that they were sent by the client
+- Example: new leader has been elected, must change a large number of configuration parameters and notify the other processes once it finishes
+    - as the new leader starts making changes, we do not want other processes to start using the configuration that is being changed
+    - new leader dies before the configuration has been fully updated, do not want the processes to use this partial configuration **(locks cannot handle this)**
+    - the new leader can designate a path as the ready znode; **The new leader makes the configuration change by deleting ready, updating the various configuration znodes, and creating ready**
+
+### Examples of primitives
+
+- Configuration Management
+    - Dynamic configuration in a distributed application
+    - At start up, stored in $z_c$ pathname
+    - Starting processes obtain their configuration by reading $z_c$ with the watch flag set to true
+    - If configuration in $z_c$ is updated, the processes are notified and read the new configuration, again setting the watch flag to true
+    - Watches are used to get the most recent information
+        - e.g. if a process watching $z_c$ is notified of a change to $z_c$ and before it
+        can issue a read for $z_c$ there are three more changes to 
+        $z_c$, the process does not receive three more notification events.
+- Rendezvous
+    - A client may want to start a master process and several worker processes, but the starting processes is done by a scheduler, so the client does not know ahead of time information such as addresses and ports that it can give the worker processes to connect to the master. We handle this scenario with ZooKeeper using a rendezvous znode, $z_r$, which is an node
+    created by the client. The client passes the full pathname of $z_r$ as a startup parameter of the master and worker processes. When the master starts it fills in $z_r$ with information about addresses and ports it is using. When workers start, they read $z_r$ with watch set to true
+- Group Membership
+    - 
+- Simple Locks
+- Simple Locks without Herd Effect
+- Read/Write Locks
+- Double Barrier

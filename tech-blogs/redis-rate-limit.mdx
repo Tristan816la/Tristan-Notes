@@ -1,84 +1,101 @@
 ---
-title: "Create User"
-api: "POST https://api.mintlify.com/api/user"
-description: "This endpoint creates a new user"
+title: "Rate limiting with Redis"
+description: "By Ramp Engineering"
 ---
 
-### Body
+## Use Case
 
-<ParamField body="current_token" type="string">
-  This is the current user group token you have for the user group that you want
-  to rotate.
-</ParamField>
+- Limit requests to third-party libraries globally
+    - third-party APIs have different rate limiting requirements
+- Rate limiting Celery tasks globally
+    - Taking action across entire userset
+- Inbound traffic rate limiting for our application API
+    - Cloudflare rate limit API usage by route, user IP, and other attributes
+    - better to since attackers can switch IP: rate limit by app-level identities, such as authenticated user’s ID
 
-### Response
+## Old Solution
 
-<ResponseField name="success" type="number">
-  Indicates whether the call was successful. 1 if successful, 0 if not.
-</ResponseField>
+- Celery: decorators
+    - Placing actions wishing to rate limit inside tasks and rate limiting the tasks themselves
+        - limited: not all actions can be placed in tasks
+        - For actions that could be running in task, need to handle 429 responses from third parties
+- Problem: Celery rate limiting is per-worker and not global
+    - Possible to hack around, but requires a task author to know
+        - What queue the task is running on
+        - How many Celery workers are running for a given queue
+        - Worker autoscaling behavior
 
-<ResponseField name="user_group" type="object">
+## Goals
 
-The contents of the user group
+- Create a general rate limiting framework in which we could test various rate limiting algorithms.
+- Select an initial rate limiting algorithm that works well for most use cases
 
-<Expandable title="Toggle object">
+## Rate limiting Algorithms
 
-<ResponseField name="team_id" type="number">
-  This is the internal ID for this user group. You don't need to record this
-  information, since you will not need to use it.
-</ResponseField>
+### Fixed window
 
-<ResponseField name="token" type="string">
-  This is the user group token (userGroupToken or USER_GROUP_TOKEN) that will be
-  used to identify which user group is viewing the dashboard. You should save
-  this on your end to use when rendering an embedded dashboard.
-</ResponseField>
+- For each time interval (eg. every hour), store and increment a counter for every successful request, and reset the counter after every interval.
+    - allow up to 2x the specified rate limit in instantaneous spikes in the worst case scenario
+        - e.g. with a fixed-window interval resetting at the start of every hour that allows 100 requests per interval, a user can make 100 requests at 11:59, and then make another 100 requests at 12:01.
 
-<ResponseField name="name" type="string">
-  This is the name of the user group provided in the request body.
-</ResponseField>
+### Sliding window
 
-<ResponseField name="provided_id" type="string">
-  This is the user_group_id provided in the request body.
-</ResponseField>
+- prevent spikes, but trickier to implement, requiring to keep track of all the request times
+- More memory usage and may not scale well
 
-<ResponseField name="api_environment_tag" type="JSON or null">
-  This is the environment tag of the user group. Possible values are 'Customer'
-  and 'Testing'. User group id's must be unique to each environment, so you can
-  not create multiple user groups with with same id. If you have a production
-  customer and a test user group with the same id, you will be required to label
-  one as 'Customer' and another as 'Testing'
-</ResponseField>
+### Leaky bucket/token bucket
 
-</Expandable>
+- “leaky bucket”
+    - volume of bucket is set to the limit - the max number of requests for a given time interval
+    - each new successful request adds a single unit to the bucket, and the bucket “leaks” (decrements) at a fixed rate. When the bucket is full, requests are denied
 
-</ResponseField>
+### Generic Cell Rate Algorithm (GCRA)
 
-<RequestExample>
+- variant of leaky bucket
+- lazily computes a “theoretical arrival time” (TAT) that the next request would have to meet
+- each successful request ⇒ TAT is increased by a small amount
+- If TAT is larger than a pre-computed limit, requests are denied
+- TAT never decreases, but pre-computed limit steadily increases as time passes to allow more requests over time
 
-```bash Example Request
-curl --location --request POST 'https://api.mintlify.com/api/user' \
---header 'Content-Type: application/json' \
---header 'Authorization: Token <token>' \
---data-raw '{
-    "current_token": ""
-}'
+## Implementation
+
+- use a Redis lock to prevent race conditions
+- use floats instead of ints for timestamps for higher precision
+- use Redis time to get current time instead of relying on server time which may differ across servers
+
+
+```python
+def check_allowed(self, key: str, limit: int, period: timedelta) -> bool:
+    """
+    Returns whether a request should be allowed
+
+    This implementation is modified from https://dev.to/astagi/rate-limiting-using-python-and-redis-58gk
+
+    1. uses higher precision floats instead of ints
+    2. returns true for allowing instead of returning true for rejecting
+
+    This rate limiter follows the GCRA algorithm. Resources:
+    - https://smarketshq.com/implementing-gcra-in-python-5df1f11aaa96
+    - https://brandur.org/rate-limiting
+    - https://en.wikipedia.org/wiki/Generic_cell_rate_algorithm
+    """
+
+    period_in_seconds = int(period.total_seconds())
+    now = self._get_redis_time_now()
+
+    separation = period_in_seconds / limit
+    self.redis.setnx(key, 0)
+    try:
+        with self.redis.lock(
+            "rate_limiter_lock:" + key,
+            blocking_timeout=self.REDIS_RATE_LIMITER_LOCK_TIMEOUT,
+        ):
+            tat = max(float(self.redis.get(key) or now), now)
+            if tat - now <= period_in_seconds - separation:
+                new_tat = max(tat, now) + separation
+                self.redis.set(name=key, value=new_tat, ex=self.DEFAULT_TTL)
+                return True
+            return False
+    except exceptions.LockError:
+        return False
 ```
-
-</RequestExample>
-
-<ResponseExample>
-
-```json Response
-{
-  "success": 1,
-  "user_group": {
-    "team_id": 3,
-    "token": "<user_group_token_to_auth_dashboard>",
-    "name": "Example 1",
-    "provided_id": "example_1"
-  }
-}
-```
-
-</ResponseExample>

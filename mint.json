@@ -15,18 +15,6 @@
       "light": "#FAFAFA"
     }
   },
-  "anchors": [
-    {
-      "name": "Tech Blogs",
-      "icon": "splotch",
-      "url": "tech-blogs"
-    },
-    {
-      "name": "Paper Notes",
-      "icon": "splotch",
-      "url": "api-reference"
-    }
-  ],
   "navigation": [
     {
       "group": "Home",
@@ -44,7 +32,8 @@
       "group": "Paper Notes",
       "pages": [
         "paper-notes/mapreduce",
-        "paper-notes/raft"
+        "paper-notes/raft",
+        "paper-notes/zookeeper"
       ]
     },
     {
