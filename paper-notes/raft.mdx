@@ -1,0 +1,99 @@
+---
+title: Raft
+description: In Search of an Understandable Consensus Algorithm
+---
+
+Raft is a consensus algorithm to manage replicated logs
+
+## 1. Raft Features
+
+- **Strong Leader**
+    - stronger form of leadership
+        - e.g. logs entries only flow from the leader to other servers
+- **Leader Election**
+    - use randomized timers to elect leaders, resolving conflicts simply and rapidly
+- **Membership Changes**
+    - changing the set of servers in the cluster uses a new joint consensus approach where the majorities of two different configurations overlap during transitions
+
+## 2. The Raft Consensus Algorithm
+
+- Elect a distinguished leader, leader has complete responsibility for managing the replicated log
+- Raft decomposes the consensus problem into three independent subproblems
+    - **Election Safety:** at most one leader can be elected in a given term. §5.2
+    - **Leader Append-Only:** a leader never overwrites or deletes entries in its log; it only appends new entries. §5.3
+    - **Log Matching:** if two logs contain an entry with the same index and term, then the logs are identical in all entries up through the given index. §5.3
+    - **Leader Completeness:** if a log entry is committed in a given term, then that entry will be present in the logs of the leaders for all higher-numbered terms. §5.4
+    - **State Machine Safety:** if a server has applied a log entry at a given index to its state machine, no other server will ever apply a different log entry for the same index. §5.4.3
+
+![Untitled](https://s3.us-west-2.amazonaws.com/secure.notion-static.com/7d0fa43a-de3f-4754-81f3-6eb41ad743d5/Untitled.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIAT73L2G45EIPT3X45%2F20230215%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20230215T234232Z&X-Amz-Expires=86400&X-Amz-Signature=44bbc8680e6952e93b3ad21cea8cae1e757885d63e7a5496eb63ca647641cbe5&X-Amz-SignedHeaders=host&response-content-disposition=filename%3D%22Untitled.png%22&x-id=GetObject)
+
+- Notice that the states differ from being persistent and volatile
+
+![Untitled](https://s3.us-west-2.amazonaws.com/secure.notion-static.com/e5af749b-2faa-441a-9501-7a4248151dec/Untitled.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIAT73L2G45EIPT3X45%2F20230215%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20230215T234251Z&X-Amz-Expires=86400&X-Amz-Signature=32bf19ecf282d8a754fa29d2763c7095b8698cbe655fee21897e6a5c7e05a629&X-Amz-SignedHeaders=host&response-content-disposition=filename%3D%22Untitled.png%22&x-id=GetObject)
+
+![Untitled](https://s3.us-west-2.amazonaws.com/secure.notion-static.com/9fa46ce2-4b6f-4ee9-92b2-67fe3304a125/Untitled.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIAT73L2G45EIPT3X45%2F20230215%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20230215T234302Z&X-Amz-Expires=86400&X-Amz-Signature=0fff3adc92c3f4d31597143093ca3a03dfa71ed0ae5e0cedeefe7aa0b31eda77&X-Amz-SignedHeaders=host&response-content-disposition=filename%3D%22Untitled.png%22&x-id=GetObject)
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/5ec7b168-dda7-4b2e-a57d-378f5477e866/Untitled.png)
+
+## 3. Leader Election
+
+- Server starts as follower, leaders send periodic heartbeats to all followers
+- If a follower receives no communication over a period of time, election timeout, begin an election
+- To begin an election
+    - increment it current term and transition to candidate state
+    - votes for itself and issues RequestVote RPCs in parallel to each of the other servers in the cluster
+    - Continue in this state until
+        - it wins the election
+        - another server becomes leader
+        - election timeout
+- Win the election
+    - receives votes from the majority of the servers
+    - each server vote at most one candidate in a given term
+    - once a candidate wins, it sends heartbeat messages to all of the other servers to establish its authority and prevent new elections
+- another server becomes leader
+    - a candidate may receive AppendEntires RPC from another server claiming to be leader
+        - if the leader’s term (in the RPC) is ≥ candidate’s current term, legit leader & candidate becomes follower
+        - if the leader’s term in the RPC is smaller, rejects the RPC and continues in candidate state
+- election timeout
+    - start a new election by incrementing its term and initiating another round of RequestVote RPCs
+    - Raft uses randomized election timeouts to ensure that split votes are rare and they are resolved quickly
+    - In most cases, only a single server will time out; it wins the election and send heartbeats before any other timeout
+
+### 4. Log Replication
+
+- The leader sends AppendEntries RPCs in parallel to each of the other entry to replicate the entry
+    - If followers crash or run slowly, the leader retries AppendEntries RPCs indefinitely
+        
+        ![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/66712516-9c59-42d1-8a8c-09b967478dd7/Untitled.png)
+        
+- The leader decides when it is safe to apply a log entry to the state machines
+    - such an entry is called **committed**
+    - committed entries are durable and will be executed by all of the available machines
+    - an entry is committed once the leader that created the entry has replicated it on a majority of the servers
+- The leader keeps track of the highest index it knows to be committed, and it includes that index in future AppendEntries RPCs (including heartbeats)
+- Once a follower learns that a log entry is committed, it applies the entry to its local state machine
+
+### Log Matching Property
+
+- two entries in different logs have the same index and term
+    - store the same command
+    - logs are identical in all preceding entries
+        - when sending an AppendEntries RPC, the leader includes the index and term of the entry in its log that immediately precedes the new entries `prevLogIndex` and `prevLogTerm`
+            - If the follower does not find an entry in its log with the same index and term, then it refuses the new entries
+
+### Log Consistency
+
+- The leader must find the latest log entry where the two logs agree, delete any entries in the follower’s log after that point, and send the follower all of the leader’s entries after that point
+    - Theses actions happen in response to the consistency check performed by AppendEntires
+- The leader maintains a nextIndex for each follower
+    - index of the next log entry the leader will send to that follower
+    - when a leader first comes to power, initializes all nextIndex values to the index just after the last one in its log
+- If a follower’s log is inconsistent with the leader’s, the leader decrements nextIndex and retries the AppendEntries RPC
+    - Eventually nextIndex will reach a point where the leader and follower logs match
+- When AppendEntries eventually succeeded, remove any conflicting entries in the follower’s log and appends entries from the leader’s log (if any)
+
+> Optimization
+> 
+> - when AppendEntries is rejected, the follower can include the term of the conflicting entry and the first index it stores for that term
+> - leader can decrement nextIndex to bypass all of the conflicting entries in that term
+> - In practice, this optimization is unnecessary, since failures happen in frequently

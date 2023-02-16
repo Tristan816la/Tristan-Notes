@@ -1,6 +1,6 @@
 {
   "$schema": "https://mintlify.com/schema.json",
-  "name": "Starter Kit",
+  "name": "Tristan Notes",
   "logo": {
     "dark": "/logo/dark.png",
     "light": "/logo/light.png"
@@ -8,58 +8,61 @@
   "favicon": "/favicon.png",
   "colors": {
     "primary": "#0069ED",
-    "light": "#4D9CFF",
-    "dark": "#0050B4"
-  },
-  "topbarLinks": [
-    {
-      "name": "Documentation",
-      "url": "https://mintlify.com/docs"
+    "light": "#405DE6",
+    "dark": "#0050B4",
+    "background": {
+      "dark": "#1F1F1F",
+      "light": "#FAFAFA"
     }
-  ],
-  "topbarCtaButton": {
-    "name": "Get Started",
-    "url": "https://github.com/mintlify/starter"
   },
   "anchors": [
     {
-      "name": "API Reference",
-      "icon": "rectangle-terminal",
+      "name": "Tech Blogs",
+      "icon": "splotch",
+      "url": "tech-blogs"
+    },
+    {
+      "name": "Paper Notes",
+      "icon": "splotch",
       "url": "api-reference"
-    },
-    {
-      "name": "Changelog",
-      "icon": "list",
-      "url": "https://mintlify.com"
-    },
-    {
-      "name": "Community",
-      "icon": "discord",
-      "url": "https://mintlify.com/community"
     }
   ],
   "navigation": [
     {
       "group": "Home",
-      "pages": ["introduction", "features"]
-    },
-    {
-      "group": "API Documentation",
-      "pages": ["api-reference/authentication"]
-    },
-    {
-      "group": "Endpoint Examples",
       "pages": [
-        "api-reference/endpoint/get",
-        "api-reference/endpoint/create",
-        "api-reference/endpoint/update",
-        "api-reference/endpoint/delete"
+        "introduction"
+      ]
+    },
+    {
+      "group": "Tech Blogs",
+      "pages": [
+        "tech-blogs/redis-rate-limit"
+      ]
+    },
+    {
+      "group": "Paper Notes",
+      "pages": [
+        "paper-notes/mapreduce",
+        "paper-notes/raft"
+      ]
+    },
+    {
+      "group": "Course Notes",
+      "pages": [
+        "course-notes/6.824"
+      ]
+    },
+    {
+      "group": "Life",
+      "pages": [
+        "life/harmony"
       ]
     }
   ],
   "footerSocials": {
-    "twitter": "https://twitter.com/mintlify",
-    "github": "https://github.com/mintlify",
-    "linkedin": "https://www.linkedin.com/company/mintsearch"
+    "twitter": "https://twitter.com/que_tristan",
+    "github": "https://github.com/Tristan816la",
+    "linkedin": "https://www.linkedin.com/in/tristanque2000/"
   }
 }

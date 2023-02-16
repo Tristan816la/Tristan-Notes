@@ -1,0 +1,90 @@
+---
+title: "MapReduce"
+description: "Simplified Data processing on Large Clusters"
+---
+
+### Definition
+
+- MapReduce is a programming model and associated implementation for processing and generating large data sets
+
+### Introduction
+
+- MapReduce is a new abstraction that hides messy details of
+    - parallelization
+    - fault-tolerance
+    - data distribution
+    - loading balancing
+
+### Programming Model
+
+- `Map`: takes an input pair and produces a set of intermediate key/value pairs
+    - group together intermediate values with the same intermediate key `I`
+- `Reduce`: accepts an intermediate key `I` and a set of values of that key
+- map (k1, v1) → list (k2, v2)
+    - k1: document name
+    - k2: intermediate keys
+    - v1: document contents
+    - v2: intermediate values
+- reduce (k2, list(v2)) → list(v2)
+    - k2: a key
+    - v2: corresponding list of values
+    - list(v2): result after reducing immediate keys and values
+
+### More Examples
+
+- Distributed grep
+    - map: match a supplied pattern
+    - reduce: identify function
+- Count of URL Access Frequency
+    - map: \<URL, 1\>
+    - reduce: \<URL, total count\>
+- Reverse Web-Link Graph
+    - map: \<target, source\>
+    - reduce: \<target, list(source)\>
+- Term-Vector per Host
+    - a term vector summarizes the most important words that occur in a document or a set of documents as list of \<word, frequency pairs\>
+    - map: \<hostname, term vector\>
+    - reduce: \<hostname, term vector\>
+        - adds the term vectors together, throwing away infrequent terms
+- Inverted-Index
+    - map: \<word, documentID\>
+    - reduce: \<word, list(documentID)\>, sort the documentIDs
+- Distributed Sort
+    - map: \<key, record\>
+    - reduce: identity
+    - using the ordering properties
+
+### Implementation
+
+- Implementation targeted to the computing env in wide use at Google
+    - Dual-processor x86 processors running Linux, 2-4 GB memory per machine
+- Commodity networking hardware is used
+    - 100 Mb/s or 1Gb/s at the machine level, averaging considerably less in overall bisection bandwidth
+- A cluster consists of hundreds or thousands of machines, machine failures are common
+- Storage is provided by inexpensive IDE disks attached directly to individual machines
+    - An in-house distributed file system is used to manage the data stored on these disk
+    - The filesystem uses replication to provide availability and reliability on top of unreliable hardware
+- Users submit jobs to a scheduling system
+    - job: a set of tasks, and is mapped by the scheduler to set of available machines within a cluster
+
+### Execution Overview
+
+- $M$ spilts for map and $R$ pieces for reduce are user-defined
+1. Split input files into M pieces of 16-64 MB per piece, start up many copies of program on a cluster of machines
+2. One copy is special, the master. Master controls workers
+3. A worker assigned with a map task perform the task by using user-defined Map function. The intermediate key/value pairs are buffered in memory
+4. **Periodically, the buffered pairs are written to local disk, partitioned into $R$ regions by the partitioning function.** Locations of the buffered pairs on local disk are passed to the master, master will forward the locations to the reduce worker
+5. **Reduce worker uses RPCs to read the buffered data from the local disks of the map workers**
+    - sort intermediate data by the intermediate keys so that all occurrences of the same key are grouped together
+    - sorting is needed because typically many different keys map to the same reduce task
+6. The reduce worker iterates over the sorted intermediate data and for each unique intermediate keys encountered:
+    - passes the key and the corresponding set of intermediate values to the user’s Reduce function.
+    - output is appended to a final output file for this reduce partition
+7. When all map tasks and reduce tasks have been completed, the master wakes up the user program and returns to the user
+
+### Fault Tolerance
+
+- If worker fails, any map tasks completed by the worker are reset back to their initial idle state, and therefore become eligible for scheduling on other workers
+- Worker A failed, and worker B took over, all reduce workers are notified of the re-execution
+- Master failure
+    - MapReduce aborts if the master fails, since master rarely failed
